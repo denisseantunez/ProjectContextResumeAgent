@@ -2,6 +2,8 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 import json
+from llm import summarize_project_context
+import sys
 
 def get_git_context(project_path: Path) -> str:
     '''
@@ -29,12 +31,12 @@ def get_git_context(project_path: Path) -> str:
         
     return "\n".join(outputs)
 
-def get_recent_files(project_path: Path, minutes=120) -> str:
+def get_recent_files(project_path: Path, minutes=120) -> list[str]:
     cutoff = datetime.now().timestamp() - minutes * 60
     recent = []
 
     for p in project_path.rglob("*"):
-        if p.is_file() and p.stat.st_mtime > cutoff:
+        if p.is_file() and p.stat().st_mtime > cutoff:
             recent.append(str(p.relative_to(project_path)))
     
     return recent
@@ -68,3 +70,35 @@ def save_context(project_path, context_text):
         "updated_at": datetime.now().isoformat()
     }
     store.write_text(json.dumps(data, indent=2))
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python agent.py <project_path>")
+        sys.exit(1)
+
+    project_path = Path(sys.argv[1]).resolve()
+
+    if not project_path.exists():
+        print(f"Error: {project_path} does not exist")
+        sys.exit(1)
+
+    git_context = get_git_context(project_path)
+    recent_files = get_recent_files(project_path)
+
+    prompt = build_prompt(
+        project_name=project_path.name,
+        git_ctx=git_context,
+        recent_files=recent_files,
+    )
+
+    context_summary = summarize_project_context(prompt)
+
+    save_context(project_path, context_summary)
+
+    print("\n=== Project Context ===\n")
+    print(context_summary)
+
+
+if __name__ == "__main__":
+    main()
